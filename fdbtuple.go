@@ -31,10 +31,10 @@
 //
 // FoundationDB tuples can currently encode byte and unicode strings, integers,
 // large integers, floats, doubles, booleans, UUIDs, tuples, and NULL values.
-// In Go these are represented as []byte (or fdb.KeyConvertible), string, int64
+// In Go these are represented as []byte (or KeyConvertible), string, int64
 // (or int, uint, uint64), *big.Int (or big.Int), float32, float64, bool,
 // UUID, Tuple, and nil.
-package tuple
+package fdbtuple
 
 import (
 	"bytes"
@@ -45,8 +45,6 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-
-	"github.com/apple/foundationdb/bindings/go/src/fdb"
 )
 
 // A TupleElement is one of the types that may be encoded in FoundationDB
@@ -54,7 +52,7 @@ import (
 // error to use an unsupported types as a TupleElement (and will typically
 // result in a runtime panic).
 //
-// The valid types for TupleElement are []byte (or fdb.KeyConvertible), string,
+// The valid types for TupleElement are []byte (or KeyConvertible), string,
 // int64 (or int, uint, uint64), *big.Int (or big.Int), float, double, bool,
 // UUID, Tuple, and nil.
 type TupleElement interface{}
@@ -94,7 +92,7 @@ func printTuple(tuple Tuple, sb *strings.Builder) {
 			sb.WriteString(")")
 		case []byte:
 			sb.WriteString("b\"")
-			sb.WriteString(fdb.Printable(t))
+			sb.WriteString(Printable(t))
 			sb.WriteString("\"")
 		default:
 			// For user-defined and standard types, we use standard Go
@@ -132,7 +130,7 @@ type Versionstamp struct {
 
 // Returns a human-readable string for this Versionstamp.
 func (vs Versionstamp) String() string {
-	return fmt.Sprintf("Versionstamp(%s, %d)", fdb.Printable(vs.TransactionVersion[:]), vs.UserVersion)
+	return fmt.Sprintf("Versionstamp(%s, %d)", Printable(vs.TransactionVersion[:]), vs.UserVersion)
 }
 
 var incompleteTransactionVersion = [10]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
@@ -388,7 +386,7 @@ func (p *packer) encodeTuple(t Tuple, nested bool, versionstamps bool) {
 			p.encodeBigInt(&e)
 		case []byte:
 			p.encodeBytes(bytesCode, e)
-		case fdb.KeyConvertible:
+		case KeyConvertible:
 			p.encodeBytes(bytesCode, []byte(e.FDBKey()))
 		case string:
 			p.encodeBytes(stringCode, []byte(e))
@@ -422,12 +420,12 @@ func (p *packer) encodeTuple(t Tuple, nested bool, versionstamps bool) {
 
 // Pack returns a new byte slice encoding the provided tuple. Pack will panic if
 // the tuple contains an element of any type other than []byte,
-// fdb.KeyConvertible, string, int64, int, uint64, uint, *big.Int, big.Int, float32,
+// KeyConvertible, string, int64, int, uint64, uint, *big.Int, big.Int, float32,
 // float64, bool, tuple.UUID, tuple.Versionstamp, nil, or a Tuple with elements of
 // valid types. It will also panic if an integer is specified with a value outside
 // the range [-2**2040+1, 2**2040-1]
 //
-// Tuple satisfies the fdb.KeyConvertible interface, so it is not necessary to
+// Tuple satisfies the KeyConvertible interface, so it is not necessary to
 // call Pack when using a Tuple with a FoundationDB API function that requires a
 // key.
 //
@@ -451,11 +449,6 @@ func (t Tuple) PackWithVersionstamp(prefix []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	apiVersion, err := fdb.GetAPIVersion()
-	if err != nil {
-		return nil, err
-	}
-
 	if hasVersionstamp == false {
 		return nil, errors.New("No incomplete versionstamp included in tuple pack with versionstamp")
 	}
@@ -471,17 +464,9 @@ func (t Tuple) PackWithVersionstamp(prefix []byte) ([]byte, error) {
 	if hasVersionstamp {
 		var scratch [4]byte
 		var offsetIndex int
-		if apiVersion < 520 {
-			if p.versionstampPos > math.MaxUint16 {
-				return nil, errors.New("Versionstamp position too large")
-			}
 
-			offsetIndex = 2
-			binary.LittleEndian.PutUint16(scratch[:], uint16(p.versionstampPos))
-		} else {
-			offsetIndex = 4
-			binary.LittleEndian.PutUint32(scratch[:], uint32(p.versionstampPos))
-		}
+		offsetIndex = 4
+		binary.LittleEndian.PutUint32(scratch[:], uint32(p.versionstampPos))
 
 		p.putBytes(scratch[0:offsetIndex])
 	}
@@ -735,28 +720,28 @@ func Unpack(b []byte) (Tuple, error) {
 }
 
 // FDBKey returns the packed representation of a Tuple, and allows Tuple to
-// satisfy the fdb.KeyConvertible interface. FDBKey will panic in the same
+// satisfy the KeyConvertible interface. FDBKey will panic in the same
 // circumstances as Pack.
-func (t Tuple) FDBKey() fdb.Key {
+func (t Tuple) FDBKey() Key {
 	return t.Pack()
 }
 
-// FDBRangeKeys allows Tuple to satisfy the fdb.ExactRange interface. The range
+// FDBRangeKeys allows Tuple to satisfy the ExactRange interface. The range
 // represents all keys that encode tuples strictly starting with a Tuple (that
 // is, all tuples of greater length than the Tuple of which the Tuple is a
 // prefix).
-func (t Tuple) FDBRangeKeys() (fdb.KeyConvertible, fdb.KeyConvertible) {
+func (t Tuple) FDBRangeKeys() (KeyConvertible, KeyConvertible) {
 	p := t.Pack()
-	return fdb.Key(concat(p, 0x00)), fdb.Key(concat(p, 0xFF))
+	return Key(concat(p, 0x00)), Key(concat(p, 0xFF))
 }
 
-// FDBRangeKeySelectors allows Tuple to satisfy the fdb.Range interface. The
+// FDBRangeKeySelectors allows Tuple to satisfy the Range interface. The
 // range represents all keys that encode tuples strictly starting with a Tuple
 // (that is, all tuples of greater length than the Tuple of which the Tuple is a
 // prefix).
-func (t Tuple) FDBRangeKeySelectors() (fdb.Selectable, fdb.Selectable) {
+func (t Tuple) FDBRangeKeySelectors() (Selectable, Selectable) {
 	b, e := t.FDBRangeKeys()
-	return fdb.FirstGreaterOrEqual(b), fdb.FirstGreaterOrEqual(e)
+	return FirstGreaterOrEqual(b), FirstGreaterOrEqual(e)
 }
 
 func concat(a []byte, b ...byte) []byte {
