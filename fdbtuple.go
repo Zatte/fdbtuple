@@ -70,9 +70,9 @@ type Tuple []TupleElement
 // String implements the fmt.Stringer interface and returns human-readable
 // string representation of this tuple. For most elements, we use the
 // object's default string representation.
-func (tuple Tuple) String() string {
+func (t Tuple) String() string {
 	sb := strings.Builder{}
-	printTuple(tuple, &sb)
+	printTuple(t, &sb)
 	return sb.String()
 }
 
